@@ -1,0 +1,481 @@
+package dom.institution.lab.cns.engine.transaction;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.Comparator;
+import java.util.List;
+
+
+/**
+ * A list containing various transactions. Can be used as a block or other needed grouping (e.g. pool).
+ *
+ */
+public class TransactionGroup implements ITxContainer {
+
+    private List<Transaction> group;
+    protected int groupID;
+    protected float totalValue;
+    protected float totalSize;
+
+    
+    private static final ThreadLocal<BitSet> SCRATCH =
+            ThreadLocal.withInitial(BitSet::new);
+    BitSet contents = new BitSet();
+    
+    
+    ////////// Constructors //////////
+
+    /**
+     * Plain constructor, simply initializes the internal data structure.
+     */
+    public TransactionGroup() {
+        group = new ArrayList<>();
+    }
+
+    /**
+     * Accepts an already created ArrayList of transactions. Calculates the total value and size in the group.
+     *
+     * @param initial An already created ArrayList of transactions
+     */
+    public TransactionGroup(List<Transaction> initial) {
+        group = initial;
+        for (Transaction t : initial) {
+            totalValue += t.getValue();
+            totalSize += t.getSize();
+            contents.set((int) t.getID());
+        }
+    }
+
+    /**
+     * Loads a transaction group from a text file. Each line in the file is a separate transaction.
+     * Each transaction is a comma separated string containing the following information:
+     * Transaction ID, Time Created, Total Value, Total Size, First Arrival NodeID.
+     * Transaction ID must run from {@code 1} to {@code n} strictly increasing by 1 at each step  (error otherwise). Time must not decrease as transactions IDs increase.
+     * Time Created: a long integer representing the number of milliseconds (ms) from a fixed time 0.
+     * Total Value: in user defined tokens depending on network.
+     * Total Size: in bytes
+     * First Arrival NodeID: the node at which the transaction first arrives
+     * NOTE: FOR TESTING ONLY. Samplers are responsible for loading transactions.
+     * @param fileName  A name to the text file containing the transactions.
+     * @param hasHeader Whether the file has a header.
+     * @throws IOException Error finding or reading the file.
+     */
+    public TransactionGroup(String fileName, boolean hasHeader) throws IOException {
+        this();
+
+        String l;
+        String delimiter = ",";
+
+        int tCount = 1;
+        long lastTime = 0;
+        int id;
+        long time;
+        float value;
+        float size;
+        int nodeID;
+
+        BufferedReader br = new BufferedReader(new FileReader(fileName));
+        while ((l = br.readLine()) != null) {
+            if (hasHeader) {
+                hasHeader = false;
+            } else {
+                String[] t = l.split(delimiter);
+                id = Integer.parseInt(t[0]);
+                if (id != tCount)
+                    throw new IllegalArgumentException("Error in workload file: transaction IDs must start from 1 and strictly increase by 1.");
+                tCount++;
+                time = Long.parseLong(t[1]);
+                if (time < lastTime)
+                    throw new IllegalArgumentException("Error in workload file: time must not decrease as transaction IDs increase.");
+                lastTime = time;
+                value = Float.parseFloat(t[2]);
+                size = Float.parseFloat(t[3]);
+                nodeID = Integer.parseInt(t[4]);
+
+                this.addTransaction(new Transaction(id, time, value, size, nodeID));
+            }
+        }
+        br.close();
+    }
+
+    ////////// Modifiers //////////
+
+    /**
+     * Replace transaction group with a new one.
+     *
+     * @param initial An array list of {@linkplain Transaction} objects, to replace the existing one.
+     */
+    public void updateTransactionGroup(List<Transaction> initial) {
+        totalValue = 0;
+        totalSize = 0;
+        group = initial;
+        contents = new BitSet();
+        for (Transaction t : initial) {
+            totalValue += t.getValue();
+            totalSize += t.getSize();
+            contents.set((int) t.getID());
+        }
+    }
+
+    /**
+     * See {@linkplain ITxContainer#addTransaction(Transaction)}.
+     */
+    @Override
+    public void addTransaction(Transaction t) {
+        group.add(t);
+        contents.set((int) t.getID());
+        totalSize += t.getSize();
+        totalValue += t.getValue();
+    }
+
+    /**
+     * See {@linkplain ITxContainer#removeTransaction(Transaction)}.
+     */
+    @Override
+    public void removeTransaction(Transaction t) {
+    	removeTransaction(t.getID());
+    	
+        /* if (!group.contains(t)) return;
+        group.remove(t);
+        contents.clear((int) t.getID());
+        totalSize -= t.getSize();
+        totalValue -= t.getValue();
+        */
+    }
+
+    
+    /**
+     * Like removeTransaction(Transaction) but with ID as an argument. 
+     * See {@linkplain ITxContainer#removeTransaction(Transaction)}.
+     * @param txID
+     */
+    public void removeTransaction(long txID) {
+        Transaction t = getTransactionById((int) txID);
+        if (!group.contains(t)) return;
+        group.remove(t);
+        contents.clear((int) txID);
+        totalSize -= t.getSize();
+        totalValue -= t.getValue();
+    }
+    
+    
+    
+    /**
+     * See {@linkplain ITxContainer#removeNextTx()}.
+     */
+    @Override
+    public Transaction removeNextTx() {
+    	
+    	int firstSet = contents.nextSetBit(0);
+        if (firstSet >= 0) {
+            contents.clear(firstSet); // clear it
+        }
+    	
+    	
+        Transaction t = group.removeFirst();
+        totalSize -= t.getSize();
+        totalValue -= t.getValue();
+        return t;
+    }
+
+    /**
+     * See {@linkplain ITxContainer#extractGroup(TransactionGroup)}.
+     */
+    @Override
+    public void extractGroup(TransactionGroup g) {
+        for (Transaction t : g.getTransactions()) {
+            this.removeTransaction(t);
+        }
+        
+        // Compute c = a AND NOT b
+        BitSet notB = (BitSet) g.getBitSet().clone();
+        notB.flip(0, Math.max(contents.length(), g.getBitSet().length())); // invert all bits up to max length
+        contents.and(notB); // c = contents AND (NOT g)
+    }
+
+    
+
+	public void addGroup(TransactionGroup g) {
+        for (Transaction t : g.getTransactions()) {
+            this.addTransaction(t);
+        }
+	}
+    
+    
+    ////////// Examine Content //////////
+
+    /**
+     * See {@linkplain ITxContainer#contains(Transaction)}.
+     */
+    @Override
+    public boolean contains(Transaction t) {
+    	
+    	if (true) return(contains_BitSet(t));
+
+        for (Transaction r : group) {
+            if (r.getID() == t.getID()) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    public boolean contains_BitSet(Transaction t) {
+    	return(contents.get((int) t.getID())); 
+    }
+    
+    
+    /**
+     * See {@linkplain ITxContainer#contains(long)}.
+     */
+    @Override
+    public boolean contains(long txID) {
+    	
+    	if (true) return(contains_BitSet(txID));
+    	
+        for (Transaction r : group) {
+            if (r.getID() == txID) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    public boolean contains_BitSet(long txID) {
+    	return(contents.get((int) txID)); 
+    }
+    
+    public boolean satisfiesDependenciesOf(Transaction tx,TxDependencyRegistry registry) {
+    	return(registry.dependenciesMetFast((int) tx.getID(),contents,SCRATCH.get()));
+    }
+    
+    public boolean satisfiesDependenciesOf(long txID, TxDependencyRegistry registry) {
+    	return(registry.dependenciesMetFast((int) txID,contents,SCRATCH.get()));
+    }  
+
+    public boolean satisfiesDependenciesOf_Incl_3rdGroup(long txID, TransactionGroup g, TxDependencyRegistry registry) {
+    	BitSet allTogether = (BitSet) contents.clone();
+		allTogether.or(g.getBitSet());
+    	return(registry.dependenciesMetFast((int) txID,allTogether,SCRATCH.get()));
+    }  
+    
+    public boolean satisfiesDependenciesOf(TransactionGroup set, TxDependencyRegistry registry) {
+    	boolean satisfied = true;
+    	for (Transaction tx: set.getTransactions()) {
+    		satisfied = satisfied && registry.dependenciesMetFast((int) tx.getID(),contents,SCRATCH.get());
+    	}
+    	return satisfied;
+    }
+    
+    public boolean satisfiesDependenciesOf_InclSelf(TransactionGroup set, TxDependencyRegistry registry) {
+    	boolean satisfied = true;
+    	for (Transaction tx: set.getTransactions()) {
+    		BitSet allTogether = (BitSet) contents.clone();
+    		allTogether.or(set.getBitSet());
+    		satisfied = 
+    				satisfied 
+    				&& 
+    				(
+    						registry.dependenciesMetFast((int) tx.getID(),allTogether,SCRATCH.get())
+    				);
+    	}
+    	return satisfied;
+    }
+    
+    
+    public boolean fullyContainsSet(BitSet set) {
+        BitSet scratch = SCRATCH.get();   // thread-private scratch
+        scratch.clear();
+        scratch.or(set);
+        scratch.andNot(contents);
+        return scratch.isEmpty();
+    }
+    
+    
+    /**
+     * Check if the group overlaps with another transaction group, i.e.,
+     * there is a transaction in {@code p} that also exists in the current group.
+     *
+     * @param p The {@linkplain TransactionGroup} in question.
+     * @return {@code true} of there is at least one transaction in {@code p} that is contained in the group, {@code false}, otherwise.
+     */
+    public boolean overlapsWithByObj(TransactionGroup p) {
+        boolean result = false;
+        for (Transaction t : p.getTransactions()) {
+            if (group.contains(t)) {
+                result = true;
+                break;
+            }
+        }
+        return (result);
+    }
+
+    /**
+     * As {@link TransactionGroup#overlapsWithByObj(TransactionGroup)} but criterion that is used is
+     * transaction ID.
+     *
+     * @param g The {@link TransactionGroup} object in question.
+     * @return {@code true} of there is at least one transaction in {@code g} that is contained in the group, {@code false}, otherwise.
+     */
+    public boolean overlapsWith(TransactionGroup g) {
+    	
+    	if (true) return(overlapsWith_BitSet(g));
+    		
+        for (Transaction r : group) {
+            for (Transaction t : g.getTransactions()) {
+                if (t.getID() == r.getID()) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    
+    public boolean overlapsWith_BitSet(TransactionGroup g) {
+    	return(contents.intersects(g.getBitSet()));
+    }
+    
+    
+    /**
+     * Retrieves a TransactionGroup containing the top N transactions based on
+     * a given size limit and comparator.
+     *
+     * @param sizeLimit The maximum cumulative size (in bytes) of transactions allowed in the result.
+     * @param comp      The comparator used to sort the transactions.
+     * @return A {@link TransactionGroup} object containing the top N transactions that do not
+     * exceed sizeLimit based on given comparator.
+     */
+    public TransactionGroup getTopN(float sizeLimit, Comparator<Transaction> comp) {
+    	
+    	//TODO: maintain three arrays of values, sizes, and ratios
+    	// 		short O(n log n)
+    	//		traverse until full O(n)
+    	// OR YOU CAN LEAVE IT ALONE
+    	
+    	if (sizeLimit < 0) {
+            throw new IllegalArgumentException(String.format("Size limit (%f) must be a positive integer", sizeLimit));
+        }
+
+        ArrayList<Transaction> result = new ArrayList<>();
+        List<Transaction> sortedGroup = group.stream().sorted(comp).toList();
+
+        int i = 0;
+        float sum = 0;
+        while ((sum <= sizeLimit) && (i < sortedGroup.size())) {
+            sum += sortedGroup.get(i).getSize();
+            result.add(sortedGroup.get(i));
+            i++;
+        }
+        if (sum > sizeLimit) { //Last one was exceeding the limit.
+            result.remove(i - 1);
+        }
+        return (new TransactionGroup(result));
+    }
+
+    ////////// Accessors //////////
+
+    /**
+     * See {@linkplain ITxContainer#getID()}.
+     */
+    @Override
+    public int getID() {
+        return groupID;
+    }
+
+    /**
+     * See {@linkplain ITxContainer#getCount()}.
+     */
+    @Override
+    public int getCount() {
+        return (group.size());
+    }
+
+    /**
+     * See {@linkplain ITxContainer#getSize()}.
+     */
+    @Override
+    public float getSize() {
+        return totalSize;
+    }
+
+    /**
+     * See {@linkplain ITxContainer#getValue()}.
+     */
+    @Override
+    public float getValue() {
+        return totalValue;
+    }
+
+    /**
+     * Return the ArrayList of transactions in the group
+     *
+     * @return An ArrayList of {@linkplain Transaction} objects representing the transactions in the group.
+     */
+    @Override
+    public List<Transaction> getTransactions() {
+        return group;
+    }
+    
+    
+    public BitSet getBitSet() {
+    	return (contents);
+    }
+    
+
+    /**
+     * Get the transaction of the group at index {@code index}. Does not check if index exists.
+     *
+     * @param index The index from {@code 0} to {@code n-1}
+     * @return A reference to the {@linkplain Transaction} at index {@code index}
+     */
+    public Transaction getTransaction(int index) {
+        return group.get(index);
+    }
+
+    public Transaction getTransactionById(int txID) {
+        for (Transaction r : group) {
+            if (r.getID() == txID) {
+            	return (r);
+            }
+        }
+    	return null;
+    }
+    
+    
+    ////////// Print Group //////////
+
+    /**
+     * See {@linkplain ITxContainer#printIDs(String)}.
+     */
+    @Override
+    public String printIDs(String sep) {
+        StringBuilder s = new StringBuilder("{");
+        for (Transaction t : group) {
+            s.append(t.getID()).append(sep);
+        }
+        if (s.length() > 1)
+            s = new StringBuilder(s.substring(0, s.length() - 1) + "}");
+        else
+            s.append("}");
+        return (s.toString());
+    }
+
+    /**
+     * Generates a debug printout of the Transaction IDs in the pool.
+     *
+     * @return A string containing the IDs of the Transactions in the pool, separated by commas.
+     */
+    @SuppressWarnings("unused")
+    public String debugPrintPoolTx() {
+        StringBuilder s = new StringBuilder();
+        for (Transaction t : group) {
+            s.append(t.getID()).append(", ");
+        }
+        return (s.toString());
+    }
+
+}

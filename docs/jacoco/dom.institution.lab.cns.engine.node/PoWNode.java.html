@@ -1,0 +1,323 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PoWNode.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">CNS Engine</a> &gt; <a href="index.source.html" class="el_package">dom.institution.lab.cns.engine.node</a> &gt; <span class="el_source">PoWNode.java</span></div><h1>PoWNode.java</h1><pre class="source lang-java linenums">package dom.institution.lab.cns.engine.node;
+
+import dom.institution.lab.cns.engine.Simulation;
+import dom.institution.lab.cns.engine.event.Event_ContainerValidation;
+import dom.institution.lab.cns.engine.transaction.ITxContainer;
+import dom.institution.lab.cns.engine.transaction.Transaction;
+
+
+
+/**
+ * Abstract class representing a node in a blockchain network.
+ * 
+ */
+public abstract class PoWNode extends Node implements IMiner {
+
+	private float hashPower;
+	private float electricPower;
+	private float electricityCost;
+<span class="pc" id="L19">	private double totalCycles = 0;</span>
+<span class="pc" id="L20">	private double prospectiveMiningCycles = 0;</span>
+<span class="pc" id="L21">	private boolean isMining = false;</span>
+	
+
+	
+	// -----------------------------------------------------------------
+	// CONSTRUCTOR
+	// -----------------------------------------------------------------
+
+	public PoWNode(Simulation sim) {
+<span class="fc" id="L30">		super(sim);</span>
+<span class="fc" id="L31">	}</span>
+
+	/**
+	 * DO NOT USE.
+	 */
+<span class="nc" id="L36">	public PoWNode() {</span>
+<span class="nc" id="L37">	}</span>
+	
+
+	// -----------------------------------------------------------------
+	// A C T I O N S
+	// -----------------------------------------------------------------
+
+	
+	
+	// -----------------------------------------------------------------
+	// MINING MANAGEMENT
+	// -----------------------------------------------------------------
+		
+	/**
+	 * Starts mining with the specified expected mining interval. 
+	 * The interval may be based on when the next validation event takes place.  
+	 * @param interval The mining interval (in seconds).
+	 */
+	public void startMining(double interval) {
+<span class="nc" id="L56">		setProspectiveMiningCycles(interval*this.getHashPower());</span>
+<span class="nc" id="L57">		isMining = true;</span>
+<span class="nc" id="L58">	}</span>
+
+	/**
+	 * Starts mining without specifying an expected mining interval.
+	 */
+	public void startMining() {
+<span class="nc" id="L64">		isMining = true;</span>
+<span class="nc" id="L65">	}</span>
+	
+	
+	/**
+	 * Checks if the node is currently mining.
+	 * @return true if the node is mining, false otherwise.
+	 */
+	public boolean isMining() {
+<span class="nc" id="L73">	    return isMining;</span>
+	}
+
+
+	/**
+	 * Stops mining
+	 */
+	public void stopMining() {
+<span class="nc" id="L81">		isMining = false;</span>
+<span class="nc" id="L82">	}</span>
+
+
+	// -----------------------------------------------------------------
+	// CYCLE COUNTING AND COST CALCULATIONS
+	// -----------------------------------------------------------------
+	
+	/**
+	 * Adds the specified number of cycles to the total cycles of the node.
+	 * @param c The number of cycles to be added. 
+	 */
+	public void addCycles(double c) {
+<span class="nc" id="L94">		totalCycles += c;</span>
+<span class="nc" id="L95">	}</span>
+	
+	/**
+	 * @return the prospectiveMiningCycles
+	 */
+	public double getProspectiveMiningCycles() {
+<span class="nc" id="L101">		return prospectiveMiningCycles;</span>
+	}
+
+
+
+
+	/**
+	 * @param prospectiveMiningCycles the prospectiveMiningCycles to set
+	 */
+	public void setProspectiveMiningCycles(double prospectiveMiningCycles) {
+<span class="nc" id="L111">		this.prospectiveMiningCycles = prospectiveMiningCycles;</span>
+<span class="nc" id="L112">	}</span>
+
+
+
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public double getTotalCycles() {
+<span class="nc" id="L122">		return totalCycles;</span>
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public double getCostPerGH() {
+		//[ [electrictiyCost ($/kWh) * electricPower (W) / 1000 (W/kW)] /  [3600 (s/h) * hashPower (GH/s)]]
+<span class="nc" id="L131">		return ( (electricityCost * electricPower / 1000) / (3600 * hashPower) );</span>
+	}
+
+
+	
+	// -----------------------------------------------------------------
+	// GETTERS AND SETTERS
+	// -----------------------------------------------------------------
+
+	//
+	// SIMPLE SET/GET
+	//
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void setHashPower(float hashpower) {
+<span class="pc bpc" id="L148" title="1 of 2 branches missed.">		if(hashpower &lt; 0 )</span>
+<span class="nc" id="L149">			throw new ArithmeticException(&quot;Hash Power &lt; 0&quot;);</span>
+<span class="fc" id="L150">	    this.hashPower = hashpower;</span>
+<span class="fc" id="L151">	}</span>
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public float getHashPower() {
+<span class="fc" id="L158">	    return hashPower;</span>
+	}
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void setElectricityCost(float electricityCost) {
+<span class="nc bnc" id="L166" title="All 2 branches missed.">		if(electricityCost &lt; 0 )</span>
+<span class="nc" id="L167">			throw new ArithmeticException(&quot;Electricity Cost &lt; 0&quot;);</span>
+<span class="nc" id="L168">	    this.electricityCost = electricityCost;</span>
+<span class="nc" id="L169">	}</span>
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public float getElectricityCost() {
+<span class="nc" id="L176">	    return electricityCost;</span>
+	}
+
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public float getElectricPower() {
+<span class="nc" id="L185">		return this.electricPower;</span>
+	}
+
+	
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void setElectricPower(float power) {
+<span class="nc" id="L194">		this.electricPower = power;</span>
+		
+<span class="nc" id="L196">	}</span>
+	
+	
+
+	
+	
+	// -----------------------------------------------------------------
+	// VALIDATION EVENT CREATION AND MANAGEMENT
+	// -----------------------------------------------------------------
+	
+	
+    /**
+     * Returns the next validation event associated with this node. Useful for removing the event when necessary.
+     * @return The next validation Event.
+     */
+    public Event_ContainerValidation getNextValidationEvent() {
+<span class="nc" id="L212">    	return this.nextValidationEvent;</span>
+    }
+    
+    /**
+     * Deletes the next validation event associated with this node.
+     * TODO: how does this affect cycle counting statistics?
+     */
+    public void resetNextValidationEvent() {
+<span class="nc" id="L220">    	this.nextValidationEvent = null;</span>
+<span class="nc" id="L221">    }</span>
+	
+    /**
+     * Replaces the next validation event associated with this node.
+     * TODO: how does this affect cycle counting statistics?
+     */
+    public void setNextValidationEvent(Event_ContainerValidation e) {
+<span class="nc" id="L228">    	this.nextValidationEvent = e;</span>
+<span class="nc" id="L229">    }</span>
+    
+    
+    
+	/**
+	 * Schedules a validation event for the specified transaction container at the given time. The method adds to {@code time} a validation time sample and schedules the event at the resulting time.
+	 * @param txc The transaction container to be validated.
+	 * @param time The simulation time when the scheduling occurs. The even will be scheduled at `time + mining interval`. 
+	 * @return The scheduled mining interval in seconds.
+	 */
+	public long scheduleValidationEvent(ITxContainer txc, long time) {
+<span class="nc" id="L240">		long h = sim.getSampler().getNodeSampler().getNextMiningInterval(getHashPower());</span>
+<span class="nc" id="L241">	    Event_ContainerValidation e = new Event_ContainerValidation(txc, this, time + h);</span>
+<span class="nc" id="L242">	    this.nextValidationEvent = e;</span>
+<span class="nc" id="L243">	    sim.schedule(e);</span>
+<span class="nc" id="L244">	    return (h);</span>
+	}
+    
+
+	/**
+	 * Schedules a validation event for the specified transaction container to the given time.
+	 * @param txc The transaction container to be validated.
+	 * @param time The simulation time when the event shall be scheduled. 
+	 */
+	public void scheduleValidationEvent_Deterministic(ITxContainer txc, long time) {
+<span class="nc" id="L254">	    Event_ContainerValidation e = new Event_ContainerValidation(txc, this, time);</span>
+<span class="nc" id="L255">	    this.nextValidationEvent = e;</span>
+<span class="nc" id="L256">	    sim.schedule(e);</span>
+<span class="nc" id="L257">	}</span>
+	
+	
+	
+	// -----------------------------------------------------------------
+	// EVENT HANDLERS / BEHAVIORS
+	// -----------------------------------------------------------------
+	
+	
+	
+	/**
+	 * {@inheritDoc}
+	 * TODO: prospectiveMiningCycles must be removed from here, they are inaccurate, in cases of cancellation.
+	 */
+	@Override
+	public void event_NodeCompletesValidation(ITxContainer t, long time) {
+<span class="nc" id="L273">		addCycles(getProspectiveMiningCycles());</span>
+<span class="nc" id="L274">		setProspectiveMiningCycles(0);</span>
+<span class="nc" id="L275">	}</span>
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void event_NodeReceivesPropagatedTransaction(Transaction t, long time) {
+<span class="nc" id="L282">	}</span>
+
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void event_PrintPeriodicReport(long time) {
+<span class="nc" id="L290">		this.periodicReport();</span>
+<span class="nc" id="L291">	}</span>
+
+
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void event_PrintBeliefReport(long[] sample, long time) {
+<span class="nc" id="L300">		this.beliefReport(sample, time);</span>
+		
+<span class="nc" id="L302">	}</span>
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void event_PrintStructureReport(long time) {
+<span class="nc" id="L309">		this.structureReport();</span>
+<span class="nc" id="L310">	}</span>
+
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void event_NodeStatusReport(long time) {
+<span class="nc" id="L318">		this.nodeStatusReport();</span>
+<span class="nc" id="L319">	}</span>
+	
+	
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

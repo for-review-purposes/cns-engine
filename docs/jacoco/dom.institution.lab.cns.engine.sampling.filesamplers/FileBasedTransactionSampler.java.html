@@ -1,0 +1,471 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>FileBasedTransactionSampler.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">CNS Engine</a> &gt; <a href="index.source.html" class="el_package">dom.institution.lab.cns.engine.sampling.filesamplers</a> &gt; <span class="el_source">FileBasedTransactionSampler.java</span></div><h1>FileBasedTransactionSampler.java</h1><pre class="source lang-java linenums">package dom.institution.lab.cns.engine.sampling.filesamplers;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.LinkedList;
+import java.util.Queue;
+
+import dom.institution.lab.cns.engine.Debug;
+import dom.institution.lab.cns.engine.config.Config;
+import dom.institution.lab.cns.engine.sampling.interfaces.AbstractTransactionSampler;
+
+/**
+ * Transaction sampler that reads transaction information from a CSV file.
+ * &lt;p&gt;
+ * The file is expected to contain transactions with the following columns:
+ * &lt;ol&gt;
+ *   &lt;li&gt;Transaction ID (ignored)&lt;/li&gt;
+ *   &lt;li&gt;Transaction size (long)&lt;/li&gt;
+ *   &lt;li&gt;Transaction fee (float)&lt;/li&gt;
+ *   &lt;li&gt;Transaction arrival time (long, milliseconds)&lt;/li&gt;
+ * &lt;/ol&gt;
+ * Optionally, the first line can be a header, which will be skipped.
+ * &lt;p&gt;
+ * If the file does not contain enough transactions as specified in the configuration
+ * property {@code workload.numTransactions}, an optional {@linkplain AbstractTransactionSampler} 
+ * can be used to supply additional transaction intervals, sizes, and fees.
+ * 
+ * @see AbstractTransactionSampler
+ */
+public class FileBasedTransactionSampler extends AbstractTransactionSampler {
+
+	/** Path to the CSV file containing the transaction workload */
+	String transactionsFilePath;
+
+	/** Optional alternative sampler for additional transactions if the file is too short */
+<span class="nc" id="L39">	AbstractTransactionSampler alternativeSampler = null;</span>
+
+	/** Number of transactions required according to configuration */
+	/** TODO-JIRA: Config validation */
+<span class="nc" id="L43">	private int requiredTransactionLines = Config.getPropertyInt(&quot;workload.numTransactions&quot;);</span>
+
+	/** Arrival time of the last transaction (milliseconds) */
+<span class="nc" id="L46">	private float lastArrivalTime = 0;</span>
+
+	/** Queue of transaction sizes read from file */
+<span class="nc" id="L49">	private Queue&lt;Long&gt; transactionSizes = new LinkedList&lt;&gt;();</span>
+
+	/** Queue of transaction fees read from file */
+<span class="nc" id="L52">	private Queue&lt;Float&gt; transactionFeeValues = new LinkedList&lt;&gt;();</span>
+
+	/** Queue of arrival node ids */
+<span class="nc" id="L55">	private Queue&lt;Integer&gt; transactionNodeIDs = new LinkedList&lt;&gt;();</span>
+
+	/** Queue of transaction arrival times read from file (milliseconds) */
+<span class="nc" id="L58">	private final Queue&lt;Long&gt; transactionArrivalTimes = new LinkedList&lt;&gt;();</span>
+
+	/** ArrayList of conflicting IDs */
+<span class="nc" id="L61">	private ArrayList&lt;Integer&gt; conflictingTxs = new ArrayList&lt;&gt;();</span>
+
+	/** ArrayList of conflicting IDs */
+<span class="nc" id="L64">	private ArrayList&lt;BitSet&gt; dependencies = new ArrayList&lt;&gt;();</span>
+
+
+	// -----------------------------------------------------------------
+	// CONSTRUCTORS
+	// -----------------------------------------------------------------
+
+	/**
+	 * Creates a {@linkplain FileBasedTransactionSampler} that reads transactions from a file.
+	 * 
+	 * @param transactionsFilePath Path to the CSV file containing transaction data
+	 */
+<span class="nc" id="L76">	public FileBasedTransactionSampler(String transactionsFilePath){</span>
+<span class="nc" id="L77">		this.transactionsFilePath = transactionsFilePath;</span>
+		try {
+<span class="nc" id="L79">			loadTransactionWorkload();</span>
+<span class="nc" id="L80">		} catch (Exception e) {</span>
+			//TODO-JIRA: unified error reporting
+<span class="nc" id="L82">			Debug.e(this, &quot;Error loading workload: &quot; + e.getMessage());</span>
+<span class="nc" id="L83">			e.printStackTrace();</span>
+<span class="nc" id="L84">			throw new RuntimeException(e);</span>
+<span class="nc" id="L85">		}</span>
+<span class="nc" id="L86">	}</span>
+
+	/**
+	 * Creates a {@linkplain FileBasedTransactionSampler} with an alternative sampler.
+	 * &lt;p&gt;
+	 * The alternative sampler is used when the file does not contain enough transactions
+	 * as specified in configuration.
+	 * 
+	 * @param transactionsFilePath Path to the CSV file containing transaction data
+	 * @param randomSampler        Alternative {@linkplain AbstractTransactionSampler} for missing transactions
+	 */
+<span class="nc" id="L97">	public FileBasedTransactionSampler(String transactionsFilePath, AbstractTransactionSampler randomSampler) {</span>
+<span class="nc" id="L98">		this.alternativeSampler = randomSampler;</span>
+<span class="nc" id="L99">		this.transactionsFilePath = transactionsFilePath;</span>
+		try {
+<span class="nc" id="L101">			loadTransactionWorkload();</span>
+<span class="nc" id="L102">		} catch (Exception e) {</span>
+			//TODO-JIRA: unified error reporting
+<span class="nc" id="L104">			System.err.println(&quot;Error loading workload: &quot; + e.getMessage());</span>
+<span class="nc" id="L105">			e.printStackTrace();</span>
+<span class="nc" id="L106">		}</span>
+<span class="nc" id="L107">	}</span>
+
+
+	// -----------------------------------------------------------------
+	// WORKLOAD LOADING
+	// -----------------------------------------------------------------
+
+	/**
+	 * Loads the transaction workload from the file.
+	 * 
+	 * @throws Exception if the file contains fewer transactions than required and no alternative sampler is defined
+	 */
+	public void loadTransactionWorkload() throws Exception {
+<span class="nc" id="L120">		loadTransactionWorkload(true);</span>
+<span class="nc" id="L121">	}</span>
+
+	/**
+	 * Loads the transaction workload from the file, optionally skipping the header.
+	 * 
+	 * @param hasHeaders True if the first line is a header and should be skipped
+	 * @throws Exception if the file contains fewer transactions than required and no alternative sampler is defined
+	 * TODO: incorporate into centralized error and debug reporting.  
+	*/
+	/*
+	public void loadTransactionWorkload(boolean hasHeaders) throws Exception {
+		int lineCount = 0;
+		String line;
+		try (BufferedReader br = new BufferedReader(new FileReader(transactionsFilePath))) {
+			while ((line = br.readLine()) != null) {
+				lineCount++;
+				String[] values = line.split(&quot;,&quot;);
+				if (values.length != 4) {
+					continue; // Skip lines that don't have exactly 4 values
+				}
+				if (hasHeaders &amp;&amp; lineCount == 1) {
+					continue; // Skip first line
+				}
+				try {
+					transactionSizes.add(Long.parseLong(values[1].trim()));
+					transactionFeeValues.add(Float.parseFloat(values[2].trim()));
+					transactionArrivalTimes.add(Long.parseLong(values[3].trim()));
+				} catch (NumberFormatException e) {
+					System.err.println(&quot;Error parsing transaction line: &quot; + line);
+				}
+			}
+		} catch (IOException e) {
+			Debug.e(this,&quot;Error loading workload: no such file or directory.&quot;);
+			throw e;
+		}
+		if (hasHeaders) lineCount--;
+		if (lineCount &lt; requiredTransactionLines) {
+			if (alternativeSampler == null) {
+				throw new Exception(&quot;The transaction file does not contain enough lines as per configuration file. Required: &quot; + requiredTransactionLines + &quot;, Found: &quot; + lineCount + &quot;. Define alternative sampler for the additional intervals or update config file.&quot;);
+			} else {
+				Debug.p(1,this,&quot;The transaction file does not contain enough lines as per configuration file. Required: &quot; + requiredTransactionLines + &quot;, Found: &quot; + lineCount + &quot;. Additional arrrivals to be drawn from alternative sampler.&quot;);
+			}
+		} else if (lineCount &gt; requiredTransactionLines) {
+			Debug.w(this,&quot;Transaction file contains more lines than required transactions as per configuration file. Required: &quot;	+ requiredTransactionLines + &quot;, Found: &quot; + lineCount);
+		}
+	}
+	 */
+
+
+
+	public void loadTransactionWorkload(boolean hasHeaders) throws Exception {
+<span class="nc" id="L172">		int lineCount = 0;</span>
+		String line;
+<span class="nc" id="L174">		try (BufferedReader br = new BufferedReader(new FileReader(transactionsFilePath))) {</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">			while ((line = br.readLine()) != null) {</span>
+<span class="nc" id="L176">				lineCount++;</span>
+<span class="nc" id="L177">				String[] values = line.split(&quot;,&quot;);</span>
+
+				// Skip lines that don't have at least 4 columns
+<span class="nc bnc" id="L180" title="All 2 branches missed.">				if (values.length &lt; 5) {</span>
+<span class="nc" id="L181">					continue;</span>
+				}
+
+				// Skip first line if headers
+<span class="nc bnc" id="L185" title="All 4 branches missed.">				if (hasHeaders &amp;&amp; lineCount == 1) {</span>
+<span class="nc" id="L186">					continue;</span>
+				}
+
+				try {
+<span class="nc" id="L190">					transactionSizes.add(Long.parseLong(values[1].trim()));</span>
+<span class="nc" id="L191">					transactionFeeValues.add(Float.parseFloat(values[2].trim()));</span>
+<span class="nc" id="L192">					transactionNodeIDs.add(Integer.parseInt(values[3].trim()));</span>
+<span class="nc" id="L193">					transactionArrivalTimes.add(Long.parseLong(values[4].trim()));</span>
+
+<span class="nc bnc" id="L195" title="All 3 branches missed.">					switch (values.length) {</span>
+					case 7: //has both conflicting Tx and dependencies
+<span class="nc" id="L197">						dependencies.add(parseToBitSet(values[6].trim()));</span>
+					case 6: //has conflicting Tx
+						try {
+<span class="nc" id="L200">							conflictingTxs.add(Integer.parseInt(values[5].trim()));</span>
+<span class="nc" id="L201">						} catch (NumberFormatException e) {</span>
+<span class="nc" id="L202">							System.err.println(&quot;Error parsing conflictingTx for line: &quot; + line + </span>
+									&quot; — storing as -1&quot;);
+<span class="nc" id="L204">							conflictingTxs.add(-1); // fallback if parsing fails</span>
+<span class="nc" id="L205">						}</span>
+<span class="nc" id="L206">						break;</span>
+					default:
+<span class="nc" id="L208">						conflictingTxs.add(-1);</span>
+					}
+					
+<span class="nc" id="L211">				} catch (NumberFormatException e) {</span>
+<span class="nc" id="L212">					Debug.e(&quot;Error parsing transaction line: &quot; + line);</span>
+<span class="nc" id="L213">					Debug.e(&quot;1: &quot; + Long.parseLong(values[1].trim()));</span>
+<span class="nc" id="L214">					Debug.e(&quot;2: &quot; + Float.parseFloat(values[1].trim()));</span>
+<span class="nc" id="L215">					Debug.e(&quot;3: &quot; + Integer.parseInt(values[3].trim()));</span>
+<span class="nc" id="L216">					Debug.e(&quot;4: &quot; + Long.parseLong(values[4].trim()));</span>
+<span class="nc" id="L217">					System.exit(-1);</span>
+<span class="nc" id="L218">				}</span>
+<span class="nc" id="L219">			}</span>
+<span class="nc" id="L220">		} catch (IOException e) {</span>
+<span class="nc" id="L221">			Debug.e(this,&quot;Error loading workload: no such file or directory.&quot;);</span>
+<span class="nc" id="L222">			throw e;</span>
+<span class="nc" id="L223">		}</span>
+
+<span class="nc bnc" id="L225" title="All 2 branches missed.">		if (hasHeaders) lineCount--;</span>
+
+<span class="nc bnc" id="L227" title="All 2 branches missed.">		if (lineCount &lt; requiredTransactionLines) {</span>
+<span class="nc bnc" id="L228" title="All 2 branches missed.">			if (alternativeSampler == null) {</span>
+<span class="nc" id="L229">				throw new Exception(&quot;The transaction file does not contain enough lines as per configuration file. Required: &quot; + requiredTransactionLines + &quot;, Found: &quot; + lineCount + &quot;. Define alternative sampler for the additional intervals or update config file.&quot;);</span>
+			} else {
+<span class="nc" id="L231">				Debug.p(1,this,&quot;The transaction file does not contain enough lines as per configuration file. Required: &quot; + requiredTransactionLines + &quot;, Found: &quot; + lineCount + &quot;. Additional arrivals to be drawn from alternative sampler.&quot;);</span>
+			}
+<span class="nc bnc" id="L233" title="All 2 branches missed.">		} else if (lineCount &gt; requiredTransactionLines) {</span>
+<span class="nc" id="L234">			Debug.w(this,&quot;Transaction file contains more lines than required transactions as per configuration file. Required: &quot; + requiredTransactionLines + &quot;, Found: &quot; + lineCount);</span>
+		}
+<span class="nc" id="L236">	}</span>
+
+
+
+
+	// -----------------------------------------------------------------
+	// SAMPLING ROUTINES
+	// -----------------------------------------------------------------
+
+	/**
+	 * Returns the next transaction arrival interval in milliseconds.
+	 * &lt;p&gt;
+	 * Pulls from the file queues; if the file is exhausted, uses the alternative sampler.
+	 * &lt;/p&gt;
+	 * 
+	 * @return interval until the next transaction in milliseconds
+	 * @throws Exception if the file is exhausted and no alternative sampler is defined
+	 */
+	@Override
+	public float getNextTransactionArrivalInterval() throws Exception {
+		float arrivalTime;
+		float interval;
+
+<span class="nc bnc" id="L259" title="All 2 branches missed.">		if (!transactionArrivalTimes.isEmpty()) {</span>
+<span class="nc" id="L260">			arrivalTime = transactionArrivalTimes.poll();</span>
+<span class="nc" id="L261">			interval = arrivalTime - lastArrivalTime;</span>
+<span class="nc" id="L262">			lastArrivalTime = arrivalTime;</span>
+<span class="nc bnc" id="L263" title="All 2 branches missed.">		} else if (alternativeSampler != null) {</span>
+<span class="nc" id="L264">			interval = alternativeSampler.getNextTransactionArrivalInterval();</span>
+		} else {
+<span class="nc" id="L266">			Debug.e(this,&quot;getNextTransactionArrivalInterval(): Transaction file has less transactions than specified in configuration file. Alternative Sampler not specified.&quot;);</span>
+<span class="nc" id="L267">			throw new Exception(&quot;Transaction file has less transactions than specified in configuration file. Alternative Sampler not specified.&quot;);</span>
+		}
+<span class="nc" id="L269">		return (interval); </span>
+	}
+
+	/**
+	 * Returns the next transaction fee value.
+	 * &lt;p&gt;
+	 * Pulls from the file queues; if the file is exhausted, uses the alternative sampler.
+	 * &lt;/p&gt;
+	 * 
+	 * @return transaction fee value
+	 * @throws Exception if the file is exhausted and no alternative sampler is defined
+	 */
+	@Override
+	public float getNextTransactionFeeValue() throws Exception {
+<span class="nc bnc" id="L283" title="All 2 branches missed.">		if (!transactionFeeValues.isEmpty()) {</span>
+<span class="nc" id="L284">			return(transactionFeeValues.poll());</span>
+<span class="nc bnc" id="L285" title="All 2 branches missed.">		} else if (alternativeSampler != null) {</span>
+<span class="nc" id="L286">			return(alternativeSampler.getNextTransactionFeeValue());</span>
+		} else {
+<span class="nc" id="L288">			Debug.e(this,&quot;getNextTransactionFeeValue(): Transaction file has less transactions than specified in configuration file. Alternative Sampler not specified.&quot;);</span>
+<span class="nc" id="L289">			throw new Exception(&quot;Transaction file has less transactions than specified in configuration file. Alternative Sampler not specified.&quot;);</span>
+		}
+	}
+
+	/** 
+	 * Returns the next transaction size.
+	 * &lt;p&gt;
+	 * Pulls from the file queues; if the file is exhausted, uses the alternative sampler.
+	 * &lt;/p&gt;
+	 * 
+	 * @return transaction size
+	 * @throws Exception if the file is exhausted and no alternative sampler is defined
+	 */
+	@Override
+	public long getNextTransactionSize() throws Exception {
+<span class="nc bnc" id="L304" title="All 2 branches missed.">		if (!transactionSizes.isEmpty()) {</span>
+<span class="nc" id="L305">			return(transactionSizes.poll());</span>
+<span class="nc bnc" id="L306" title="All 2 branches missed.">		} else if (alternativeSampler != null) {</span>
+<span class="nc" id="L307">			return(alternativeSampler.getNextTransactionSize());</span>
+		} else {
+<span class="nc" id="L309">			Debug.e(this,&quot;getNextTransactionSize(): Transaction file has less transactions than specified in configuration file. Alternative Sampler not specified.&quot;);</span>
+<span class="nc" id="L310">			throw new Exception(&quot;Transaction file has less transactions than specified in configuration file. Alternative Sampler not specified.&quot;);</span>
+		}
+	}
+
+
+
+	/** 
+	 * Returns the next transaction size.
+	 * &lt;p&gt;
+	 * Pulls from the file queues; if the file is exhausted, uses the alternative sampler.
+	 * &lt;/p&gt;
+	 * 
+	 * @return transaction size
+	 * @throws Exception if the file is exhausted and no alternative sampler is defined
+	 */
+	@Override
+	public int getArrivalNode() {
+<span class="nc bnc" id="L327" title="All 2 branches missed.">		if (!transactionNodeIDs.isEmpty()) {</span>
+<span class="nc" id="L328">			return(transactionNodeIDs.poll());</span>
+<span class="nc bnc" id="L329" title="All 2 branches missed.">		} else if (alternativeSampler != null) {</span>
+<span class="nc" id="L330">			return(alternativeSampler.getArrivalNode());</span>
+		} else {
+<span class="nc" id="L332">			Debug.e(this,&quot;getArrivalNode(): Transaction file has less transactions than specified in configuration file. Alternative Sampler not specified.&quot;);</span>
+<span class="nc" id="L333">			throw new IllegalStateException(&quot;Transaction file has less transactions than specified in configuration file. Alternative Sampler not specified.&quot;);</span>
+		}
+	}
+
+
+
+	/**
+	 * Returns a uniformly sampled integer in the given range.
+	 * &lt;p&gt;
+	 * Delegates to the alternative sampler.
+	 * &lt;/p&gt;
+	 */
+	@Override
+	public int getRandomNum(int min, int max) {
+<span class="nc" id="L347">		return(alternativeSampler.getRandomNum(min, max));</span>
+	}
+
+
+	@Override
+	public int getConflict(int id, int N, double alpha, double likelihood) {
+		int conf;
+<span class="nc bnc" id="L354" title="All 2 branches missed.">		if (id &lt;= conflictingTxs.size()) {</span>
+<span class="nc" id="L355">			conf = conflictingTxs.get(id-1);</span>
+			//System.err.println(&quot;File conflict for  &quot; + id + &quot; is &quot; + conf);
+		} else {
+<span class="nc" id="L358">			conf = alternativeSampler.getConflict(id, N, alpha, likelihood);</span>
+			//System.err.println(&quot;Rand conflict for  &quot; + id + &quot; is &quot; + conf);
+		}
+<span class="nc" id="L361">		return (conf);</span>
+	}
+
+	@Override
+	public BitSet randomDependencies(int id, boolean mandatory, float dispersion, int countMean, float countSD) {
+<span class="nc bnc" id="L366" title="All 2 branches missed.">		if (id &lt;= dependencies.size()) {</span>
+<span class="nc" id="L367">			return(dependencies.get(id-1));</span>
+		} else {
+<span class="nc" id="L369">			return(alternativeSampler.randomDependencies(id, mandatory, dispersion, countMean, countSD));</span>
+		}
+	}
+
+
+	// -----------------------------------------------------------------
+	// SEED MANAGEMENT
+	// -----------------------------------------------------------------
+
+
+	/**
+	 * Updates the seed in the alternative sampler.
+	 * @see dom.institution.lab.cns.engine.sampling.interfaces.IMultiSowable#updateSeed()
+	 * @see dom.institution.lab.cns.engine.sampling.standardsamplers.StandardTransactionSampler#updateSeed()
+
+	 */
+	@Override
+	public void updateSeed() {
+<span class="nc" id="L387">		alternativeSampler.updateSeed();</span>
+<span class="nc" id="L388">	}</span>
+
+	/**
+	 * Returns the transaction ID at which the seed will change.
+	 * &lt;p&gt;
+	 * Delegates to the alternative sampler.
+	 * &lt;/p&gt;
+	 */
+	@Override
+	public long getSeedChangeTx() {
+<span class="nc" id="L398">		return(alternativeSampler.getSeedChangeTx());</span>
+	}
+
+	/**
+	 * Returns whether seed updates are enabled.
+	 * &lt;p&gt;
+	 * Delegates to the alternative sampler.
+	 * &lt;/p&gt;
+	 */
+	@Override
+	public boolean seedUpdateEnabled() {
+<span class="nc" id="L409">		return(alternativeSampler.seedUpdateEnabled());</span>
+	}
+	
+	
+	
+	
+	// -----------------------------------------------------------------
+	// HELPER
+	// -----------------------------------------------------------------
+
+	public static BitSet parseToBitSet(String s) {
+<span class="nc bnc" id="L420" title="All 2 branches missed.">	    if (s == null) {</span>
+<span class="nc" id="L421">	        throw new IllegalArgumentException(&quot;Input cannot be null&quot;);</span>
+	    }
+
+<span class="nc" id="L424">	    String trimmed = s.trim();</span>
+
+	    // Special case: &quot;-1&quot; means empty bitset
+<span class="nc bnc" id="L427" title="All 2 branches missed.">	    if (trimmed.equals(&quot;-1&quot;)) {</span>
+<span class="nc" id="L428">	        return new BitSet();</span>
+	    }
+
+	    // Must start with '{' and end with '}'
+<span class="nc bnc" id="L432" title="All 4 branches missed.">	    if (!trimmed.startsWith(&quot;{&quot;) || !trimmed.endsWith(&quot;}&quot;)) {</span>
+<span class="nc" id="L433">	        throw new IllegalArgumentException(&quot;Input must be of the form {1,2,3} or -1&quot;);</span>
+	    }
+
+	    // Extract inner content
+<span class="nc" id="L437">	    String content = trimmed.substring(1, trimmed.length() - 1).trim();</span>
+
+	    // Empty braces &quot;{}&quot; are not allowed
+<span class="nc bnc" id="L440" title="All 2 branches missed.">	    if (content.isEmpty()) {</span>
+<span class="nc" id="L441">	        throw new IllegalArgumentException(&quot;Empty braces {} are not permitted; use -1 for empty&quot;);</span>
+	    }
+
+<span class="nc" id="L444">	    BitSet bitSet = new BitSet();</span>
+
+<span class="nc" id="L446">	    String[] parts = content.split(&quot;;&quot;);</span>
+<span class="nc bnc" id="L447" title="All 2 branches missed.">	    for (String part : parts) {</span>
+<span class="nc" id="L448">	        String p = part.trim();</span>
+<span class="nc bnc" id="L449" title="All 2 branches missed.">	        if (p.isEmpty()) {</span>
+<span class="nc" id="L450">	            throw new IllegalArgumentException(&quot;Empty entry inside braces: &quot; + s);</span>
+	        }
+	        int index;
+	        try {
+<span class="nc" id="L454">	            index = Integer.parseInt(p);</span>
+<span class="nc" id="L455">	        } catch (NumberFormatException e) {</span>
+<span class="nc" id="L456">	            throw new IllegalArgumentException(&quot;Invalid integer value: &quot; + p);</span>
+<span class="nc" id="L457">	        }</span>
+
+<span class="nc bnc" id="L459" title="All 2 branches missed.">	        if (index &lt; 0) {</span>
+<span class="nc" id="L460">	            throw new IllegalArgumentException(&quot;Negative bit index: &quot; + index);</span>
+	        }
+
+<span class="nc" id="L463">	        bitSet.set(index);</span>
+	    }
+
+<span class="nc" id="L466">	    return bitSet;</span>
+	}
+
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

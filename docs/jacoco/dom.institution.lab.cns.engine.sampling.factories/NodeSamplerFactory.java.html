@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>NodeSamplerFactory.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">CNS Engine</a> &gt; <a href="index.source.html" class="el_package">dom.institution.lab.cns.engine.sampling.factories</a> &gt; <span class="el_source">NodeSamplerFactory.java</span></div><h1>NodeSamplerFactory.java</h1><pre class="source lang-java linenums">package dom.institution.lab.cns.engine.sampling.factories;
+
+import dom.institution.lab.cns.engine.Debug;
+import dom.institution.lab.cns.engine.Simulation;
+import dom.institution.lab.cns.engine.config.Config;
+import dom.institution.lab.cns.engine.event.Event_SeedUpdate;
+import dom.institution.lab.cns.engine.sampling.Sampler;
+import dom.institution.lab.cns.engine.sampling.filesamplers.FileBasedNodeSampler;
+import dom.institution.lab.cns.engine.sampling.interfaces.AbstractNodeSampler;
+import dom.institution.lab.cns.engine.sampling.standardsamplers.StandardNodeSampler;
+
+
+/**
+ * Factory class responsible for constructing and configuring instances of {@linkplain AbstractNodeSampler} used in simulation runs.
+ * &lt;p&gt;
+ * The {@code NodeSamplerFactory} determines whether a {@linkplain FileBasedNodeSampler file-based} or {@linkplain StandardNodeSampler standard} node sampler should be used based on the provided configuration parameters. It also supports dynamic seed switching by scheduling {@linkplain Event_SeedUpdate seed update events} during the simulation lifecycle.
+ * &lt;/p&gt;
+ *
+ * &lt;p&gt;Key responsibilities:&lt;/p&gt;
+ * &lt;ul&gt;
+ *   &lt;li&gt;Selecting the sampler type (file-based or standard) based on whether a file path is provided.&lt;/li&gt;
+ *   &lt;li&gt;Parsing and applying initial seed chains, update flags, and switchover times from configuration strings.&lt;/li&gt;
+ *   &lt;li&gt;Scheduling {@linkplain Event_SeedUpdate seed update events} when time-based reseeding is configured.&lt;/li&gt;
+ * &lt;/ul&gt;
+ *
+ * &lt;p&gt;Example usage:&lt;/p&gt;
+ * &lt;pre&gt;{@code
+ * NodeSamplerFactory factory = new NodeSamplerFactory();
+ * AbstractNodeSampler sampler = factory.getSampler(
+ *         &quot;nodes.csv&quot;,
+ *         &quot;100,200,300&quot;,
+ *         &quot;5000,10000&quot;,
+ *         &quot;true,false&quot;,
+ *         outerSampler,
+ *         simulation);
+ * }&lt;/pre&gt;
+ *
+ * @see AbstractNodeSampler
+ * @see FileBasedNodeSampler
+ * @see StandardNodeSampler
+ * @see Event_SeedUpdate
+ * @see Config
+ * @see Simulation
+ */
+<span class="nc" id="L45">public class NodeSamplerFactory {</span>
+	
+	   /**
+     * Creates and configures an {@linkplain AbstractNodeSampler} instance based on the given parameters.
+     * &lt;p&gt;
+     * Depending on the supplied arguments, this method will instantiate either a {@linkplain FileBasedNodeSampler} or a {@linkplain StandardNodeSampler}. It also handles optional configuration of seed chains, update flags, and switchover events to support dynamic reseeding during simulation execution.
+     * &lt;/p&gt;
+     *
+     * @param path the path to a node sampling file; if {@code null}, a random sampling strategy is used
+     * @param seedChain a comma-separated list of seeds to be used sequentially during simulation; may be {@code null} or empty if no seed chaining is desired
+     * @param changeTimes a comma-separated list of timestamps at which the sampler should switch to the next seed; only applicable when {@code seedChain} is defined FIXME: is this simulation times or transaction ids?
+     * @param updateFlags a comma-separated list of boolean flags indicating whether each seed should be modulated by simulation ID; must align with {@code changeTimes}
+     * @param sampler the outer {@linkplain Sampler sampler} providing higher-level sampling context
+     * @param sim the {@linkplain Simulation simulation} instance in which the sampler operates; used to obtain the simulation ID and to schedule {@linkplain Event_SeedUpdate events}
+     * @return a fully configured {@linkplain AbstractNodeSampler} ready for use
+     * @throws Exception if inconsistent configuration is detected (e.g., seed update times provided without seed definitions)
+     */
+	public AbstractNodeSampler getSampler(
+			String path,
+			String seedChain,
+			String changeTimes,
+			String updateFlags,
+			Sampler sampler,
+			Simulation sim
+			) throws Exception {
+		
+		
+    	AbstractNodeSampler nodeSampler;
+		
+        //Check requirements and initialize
+<span class="nc bnc" id="L75" title="All 2 branches missed.">		boolean hasPath = (path != null);</span>
+<span class="nc" id="L76">        boolean hasNodeSeeds = false;</span>
+<span class="nc" id="L77">        long seeds[] = null;</span>
+<span class="nc" id="L78">        boolean flags[] = null;</span>
+        
+        
+        // Fetch the seedchain. 
+        // The seedchain is a comma-separated list of seeds to alternate between.
+<span class="nc bnc" id="L83" title="All 4 branches missed.">        if ((seedChain != null &amp;&amp; !seedChain.isEmpty())) {</span>
+<span class="nc" id="L84">        	seeds = Config.parseStringToArray(seedChain);</span>
+<span class="nc" id="L85">        	hasNodeSeeds = true;</span>
+        }
+        
+        
+        // Fetch the switchtimes. It is a comma-separated list of times at which to switch to the next seed in the seedchain.
+        // The flags are a comma-separated list of booleans indicating whether to superimpose SimID to the seed.
+<span class="nc" id="L91">        boolean hasSwitchTimes = false;  </span>
+<span class="nc" id="L92">        long switchTimes[] = null;</span>
+<span class="nc bnc" id="L93" title="All 4 branches missed.">        if ((seedChain != null &amp;&amp; !seedChain.isEmpty())) {</span>
+<span class="nc" id="L94">        	hasSwitchTimes = true;</span>
+<span class="nc" id="L95">        	switchTimes = Config.parseStringToArray(changeTimes);</span>
+<span class="nc" id="L96">        	flags = Config.parseStringToBoolean(updateFlags);</span>
+        }
+
+
+        
+        
+        // ===== VALIDATION =====
+<span class="nc bnc" id="L103" title="All 2 branches missed.">        if (hasSwitchTimes) {</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">            if (!hasNodeSeeds) {</span>
+<span class="nc" id="L105">            	Debug.e(&quot;NodeSamplerFactory: seed switch times provided but no seeds defined. Check 'seedChain' configuration.&quot;);</span>
+<span class="nc" id="L106">                throw new Exception(</span>
+                    &quot;NodeSamplerFactory: seed switch times provided but no seeds defined. &quot; +
+                    &quot;Check 'seedChain' configuration.&quot;
+                );
+            }
+<span class="nc bnc" id="L111" title="All 4 branches missed.">            if (flags != null &amp;&amp; flags.length != seeds.length) {</span>
+<span class="nc" id="L112">            	Debug.e(&quot;NodeSamplerFactory: number of updateFlags (&quot; + flags.length +</span>
+					&quot;) does not match number of seeds (&quot; + seeds.length + &quot;).&quot;);
+<span class="nc" id="L114">                throw new Exception(</span>
+                    &quot;NodeSamplerFactory: number of updateFlags (&quot; + flags.length +
+                    &quot;) does not match number of seeds (&quot; + seeds.length + &quot;).&quot;
+                );
+            }
+        }
+
+         
+<span class="nc bnc" id="L122" title="All 2 branches missed.">        if (hasPath) {</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">        	if (hasNodeSeeds) {</span>
+<span class="nc" id="L124">        		nodeSampler = new FileBasedNodeSampler(path, new StandardNodeSampler(sampler,seeds,flags,sim.getSimID()));</span>
+        	} else {
+<span class="nc" id="L126">        		nodeSampler = new FileBasedNodeSampler(path, new StandardNodeSampler(sampler));</span>
+        	}
+        } else {
+<span class="nc bnc" id="L129" title="All 2 branches missed.">        	if (hasNodeSeeds) {</span>
+<span class="nc" id="L130">        		nodeSampler = new StandardNodeSampler(sampler,seeds,flags,sim.getSimID());</span>
+        	} else {
+<span class="nc" id="L132">        		nodeSampler = new StandardNodeSampler(sampler);</span>
+        	}
+        }
+        
+        //Schedule the switchover events
+        //TODO-JIRA: Organize error handling and reporting
+<span class="nc bnc" id="L138" title="All 2 branches missed.">    	if (hasSwitchTimes) {</span>
+<span class="nc bnc" id="L139" title="All 2 branches missed.">    		if (!hasNodeSeeds) {</span>
+<span class="nc" id="L140">    			throw new Exception(&quot;Error in NodeSamplerFactory: seed switch times given (&quot; + Config.getPropertyString(&quot;node.sampler.seedUpdateTimes&quot;) +  &quot;) but not seeds to switch around.&quot;);</span>
+    		} else {
+    	        //Schedule seed change events
+<span class="nc bnc" id="L143" title="All 2 branches missed.">    	        for (int i = 0; i &lt; switchTimes.length; i++) {</span>
+<span class="nc" id="L144">    	        	Debug.p(&quot;    Scheduling sampler with chain [...] to swich to next seed at &quot; + switchTimes[i]);</span>
+<span class="nc" id="L145">    	            sim.schedule(new Event_SeedUpdate(nodeSampler, switchTimes[i]));</span>
+    	        }
+    		}
+    	}
+    	
+<span class="nc" id="L150">    	return(nodeSampler);</span>
+   
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

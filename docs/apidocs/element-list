@@ -1,0 +1,14 @@
+dom.institution.lab.cns.engine
+dom.institution.lab.cns.engine.commandline
+dom.institution.lab.cns.engine.config
+dom.institution.lab.cns.engine.event
+dom.institution.lab.cns.engine.exceptions
+dom.institution.lab.cns.engine.network
+dom.institution.lab.cns.engine.node
+dom.institution.lab.cns.engine.reporter
+dom.institution.lab.cns.engine.sampling
+dom.institution.lab.cns.engine.sampling.factories
+dom.institution.lab.cns.engine.sampling.filesamplers
+dom.institution.lab.cns.engine.sampling.interfaces
+dom.institution.lab.cns.engine.sampling.standardsamplers
+dom.institution.lab.cns.engine.transaction

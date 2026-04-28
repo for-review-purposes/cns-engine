@@ -1,0 +1,383 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SimulatorFactory.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">CNS Engine</a> &gt; <a href="index.source.html" class="el_package">dom.institution.lab.cns.engine</a> &gt; <span class="el_source">SimulatorFactory.java</span></div><h1>SimulatorFactory.java</h1><pre class="source lang-java linenums">package dom.institution.lab.cns.engine;
+
+import dom.institution.lab.cns.engine.config.Config;
+import dom.institution.lab.cns.engine.network.AbstractNetwork;
+import dom.institution.lab.cns.engine.network.FileBasedEndToEndNetwork;
+import dom.institution.lab.cns.engine.network.RandomEndToEndNetwork;
+import dom.institution.lab.cns.engine.node.NodeSet;
+import dom.institution.lab.cns.engine.node.PoWNodeSet;
+import dom.institution.lab.cns.engine.reporter.ReportEventFactory;
+import dom.institution.lab.cns.engine.sampling.Sampler;
+import dom.institution.lab.cns.engine.sampling.factories.NetworkSamplerFactory;
+import dom.institution.lab.cns.engine.sampling.factories.NodeSamplerFactory;
+import dom.institution.lab.cns.engine.sampling.factories.TransactionSamplerFactory;
+import dom.institution.lab.cns.engine.transaction.TransactionWorkload;
+import dom.institution.lab.cns.engine.transaction.TxConflictRegistry;
+import dom.institution.lab.cns.engine.transaction.TxDependencyRegistry;
+
+
+/**
+ * A factory class responsible for constructing and assembling all the main components
+ * of a {@linkplain Simulation} instance. This includes samplers, node sets, networks,
+ * transaction workloads, and reporting schedules.
+ * &lt;p&gt;
+ * The {@code SimulatorFactory} acts as a blueprint for simulation initialization:
+ * it configures the structure and dependencies of a simulation using parameters
+ * drawn from {@linkplain Config}. Subclasses define how node sets are created by
+ * implementing {@linkplain #createNodeSet(Simulation)}. Subclasses can also override any other component creation methods.
+ * &lt;/p&gt;
+ * &lt;p&gt;
+ * The overall lifecycle managed by this factory is:
+ * &lt;ol&gt;
+ *     &lt;li&gt;Create and attach a {@linkplain Sampler} to the {@linkplain Simulation}.&lt;/li&gt;
+ *     &lt;li&gt;Add node, network, and transaction samplers to the sampler.&lt;/li&gt;
+ *     &lt;li&gt;Create a {@linkplain PoWNodeSet} using the subclass’s implementation.&lt;/li&gt;
+ *     &lt;li&gt;Build and attach a network.&lt;/li&gt;
+ *     &lt;li&gt;Create and schedule a transaction workload.&lt;/li&gt;
+ *     &lt;li&gt;Schedule periodic belief reports.&lt;/li&gt;
+ *     &lt;li&gt;Apply a hard termination time for the simulation.&lt;/li&gt;
+ * &lt;/ol&gt;
+ *
+ * This class follows a &lt;strong&gt;template method&lt;/strong&gt; pattern: {@linkplain #createSimulation(int)}
+ * defines the high-level assembly algorithm, while subclasses provide concrete
+ * details (such as how the node set is created).
+ *
+ */
+<span class="nc" id="L46">public abstract class SimulatorFactory {</span>
+
+	
+	
+	// --------------------------------------------------------------
+	// COMPONENT CONSTRUCTION METHODS
+	// --------------------------------------------------------------
+	
+	
+    /**
+     * Adds and configures the node sampler for the given simulation.
+     * &lt;p&gt;
+     * The node sampler determines how nodes are selected or instantiated during
+     * simulation setup, according to parameters defined in {@linkplain Config}:
+     * &lt;ul&gt;
+     *     &lt;li&gt;{@code node.sampler.file}&lt;/li&gt;
+     *     &lt;li&gt;{@code node.sampler.seed}&lt;/li&gt;
+     *     &lt;li&gt;{@code node.sampler.seedUpdateTimes}&lt;/li&gt;
+     *     &lt;li&gt;{@code node.sampler.updateSeedFlags}&lt;/li&gt;
+     * &lt;/ul&gt;
+     *
+     * @param s the {@linkplain Simulation} to which the node sampler will be attached
+     */
+	public void addNodeSampler(Simulation s) {
+		try {
+<span class="nc" id="L71">			s.getSampler().setNodeSampler(</span>
+					new NodeSamplerFactory().getSampler
+<span class="nc" id="L73">					(</span>
+<span class="nc" id="L74">							Config.getPropertyString(&quot;node.sampler.file&quot;),</span>
+<span class="nc" id="L75">							Config.getPropertyString(&quot;node.sampler.seed&quot;),</span>
+<span class="nc" id="L76">							Config.getPropertyString(&quot;node.sampler.seedUpdateTimes&quot;),</span>
+<span class="nc" id="L77">							Config.getPropertyString(&quot;node.sampler.updateSeedFlags&quot;),</span>
+<span class="nc" id="L78">							s.getSampler(),</span>
+							s)
+					);
+<span class="nc" id="L81">		} catch (Exception e) {</span>
+<span class="nc" id="L82">			e.printStackTrace();</span>
+<span class="nc" id="L83">		}</span>
+<span class="nc" id="L84">	}</span>
+
+    /**
+     * Adds and configures the network sampler for the given simulation.
+     * &lt;p&gt;
+     * The network sampler governs how communication links or network structures
+     * are sampled or generated. It reads configuration parameters such as:
+     * &lt;ul&gt;
+     *     &lt;li&gt;{@code net.sampler.seed}&lt;/li&gt;
+     *     &lt;li&gt;{@code net.sampler.seed.updateSeed}&lt;/li&gt;
+     * &lt;/ul&gt;
+     *
+     * @param s the {@linkplain Simulation} to which the network sampler will be attached
+     */
+	public void addNetworkSampler(Simulation s) {
+<span class="nc" id="L99">		s.getSampler().setNetworkSampler</span>
+<span class="nc" id="L100">		(</span>
+				new NetworkSamplerFactory().getNetworkSampler
+<span class="nc" id="L102">				(</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">						(Config.hasProperty(&quot;net.sampler.seed&quot;) ? Config.getPropertyLong(&quot;net.sampler.seed&quot;) : null),</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">						(Config.hasProperty(&quot;net.sampler.seed.updateSeed&quot;) ? Config.getPropertyBoolean(&quot;net.sampler.seed.updateSeed&quot;) : null),</span>
+<span class="nc" id="L105">						s.getSampler(),s</span>
+						)
+				);
+<span class="nc" id="L108">	}</span>
+
+    /**
+     * Adds and configures the transaction sampler for the given simulation.
+     * &lt;p&gt;
+     * The transaction sampler defines how workload transactions are selected or
+     * constructed, based on configuration entries such as:
+     * &lt;ul&gt;
+     *     &lt;li&gt;{@code workload.sampler.file}&lt;/li&gt;
+     * &lt;/ul&gt;
+     *
+     * @param s the {@linkplain Simulation} to which the transaction sampler will be attached
+     */
+	public void addTransactionSampler(Simulation s) {
+		try {
+<span class="nc" id="L123">			s.getSampler().setTransactionSampler</span>
+<span class="nc" id="L124">			(</span>
+					new TransactionSamplerFactory().getSampler
+<span class="nc" id="L126">					(</span>
+<span class="nc" id="L127">							Config.getPropertyString(&quot;workload.sampler.file&quot;),</span>
+<span class="nc" id="L128">							s.getSampler(),</span>
+							s
+							)
+					);
+<span class="nc" id="L132">		} catch (Exception e) {</span>
+<span class="nc" id="L133">			e.printStackTrace();</span>
+<span class="nc" id="L134">		}</span>
+<span class="nc" id="L135">	}</span>
+	
+	/** 
+    * Creates the {@linkplain NodeSet} for the given simulation.
+    * &lt;p&gt;
+    * Subclasses must implement this method to define how simulation nodes
+    * are instantiated or configured.
+    *
+    * @param s the {@linkplain Simulation} for which the node set is created
+    * @return the {@linkplain NodeSet} representing all participating nodes
+    */
+	public abstract NodeSet createNodeSet(Simulation s);
+
+    /**
+     * Creates and attaches the network component to the given simulation.
+     * &lt;p&gt;
+     * If {@code net.sampler.file} is defined in the configuration, a
+     * {@linkplain FileBasedEndToEndNetwork} is created from that file.
+     * Otherwise, a {@linkplain RandomEndToEndNetwork} is generated based on
+     * the sampler.
+     *
+     * @param s  the simulation to which the network will be added
+     * @param ns the {@linkplain NodeSet} containing all nodes participating in the network
+     */
+	public void addNetwork(Simulation s, NodeSet ns) {
+<span class="nc" id="L160">		AbstractNetwork net = null;</span>
+<span class="nc" id="L161">		String netFilePath = Config.getPropertyString(&quot;net.sampler.file&quot;);</span>
+<span class="nc bnc" id="L162" title="All 2 branches missed.">		if (netFilePath != null) {</span>
+			try {
+<span class="nc" id="L164">				net = new FileBasedEndToEndNetwork(ns, netFilePath);</span>
+<span class="nc" id="L165">			} catch (Exception e) {</span>
+<span class="nc" id="L166">				e.printStackTrace();</span>
+<span class="nc" id="L167">			}</span>
+		} else {
+			try {
+<span class="nc" id="L170">				net = new RandomEndToEndNetwork(ns, s.getSampler());</span>
+<span class="nc" id="L171">			} catch (Exception e) {</span>
+<span class="nc" id="L172">				e.printStackTrace();</span>
+<span class="nc" id="L173">			}</span>
+		}
+<span class="nc" id="L175">		s.setNetwork(net);</span>
+<span class="nc" id="L176">	}</span>
+	
+    /**
+     * Creates a transaction workload and schedules it within the simulation.
+     * &lt;p&gt;
+     * The number of transactions appended is determined by the
+     * {@code workload.numTransactions} property in {@linkplain Config}.
+     *
+     * @param s the {@linkplain Simulation} for which to schedule the transaction workload
+     */
+	private void addAndScheduleTransactionWorkload(Simulation s) {
+<span class="nc" id="L187">		TransactionWorkload ts = new TransactionWorkload(s.getSampler());</span>
+		try {
+<span class="nc" id="L189">			ts.appendTransactions(Config.getPropertyLong(&quot;workload.numTransactions&quot;));</span>
+<span class="nc" id="L190">		} catch (Exception e) {</span>
+<span class="nc" id="L191">			e.printStackTrace();</span>
+<span class="nc" id="L192">		}</span>
+<span class="nc" id="L193">		s.schedule(ts);</span>
+		
+		//Keep also a pointer to the workload.
+<span class="nc" id="L196">		s.setWorkload(ts);</span>
+<span class="nc" id="L197">	}</span>
+	
+	/**
+	 * Creates a conflict registry for transactions if conflicts are enabled
+	 * in the configuration.
+	 * &lt;p&gt;
+	 * The conflict registry is populated based on the parameters:
+	 * &lt;ul&gt;
+	 *     &lt;li&gt;{@code workload.hasConflicts}&lt;/li&gt;
+	 *     &lt;li&gt;{@code workload.conflicts.dispersion}&lt;/li&gt;
+	 *     &lt;li&gt;{@code workload.conflicts.likelihood}&lt;/li&gt;
+	 * &lt;/ul&gt;
+	 *
+	 * The method creates a conflict registry object based on the size of the current workload. 
+	 * It populates it based on the sampler and the parameters. A reference to the registry is 
+	 * given to the simulator for node access.
+	 *  
+	 * 
+	 * @param s the {@linkplain Simulation} for which to create the conflict registry
+	 */
+	private void createConflictRegistry(Simulation s) {
+<span class="nc" id="L218">		int N = s.getWorkload().getCount();</span>
+		
+		//Create the registry of the appropriate size: (may or may not be used)
+<span class="nc" id="L221">		TxConflictRegistry registry = new TxConflictRegistry(N);</span>
+		
+		//set the registry to the simulation object for use by nodes.
+<span class="nc" id="L224">		s.setConflictRegistry(registry);</span>
+		
+<span class="nc bnc" id="L226" title="All 2 branches missed.">		if (Config.hasProperty(&quot;workload.hasConflicts&quot;)) { </span>
+<span class="nc bnc" id="L227" title="All 2 branches missed.">			if (Config.getPropertyBoolean(&quot;workload.hasConflicts&quot;)) {</span>
+				//Get the conflict sampling calculation parameters
+<span class="nc" id="L229">				double dispersion = Config.getPropertyDouble(&quot;workload.conflicts.dispersion&quot;);</span>
+<span class="nc" id="L230">				double likelihood = Config.getPropertyDouble(&quot;workload.conflicts.likelihood&quot;);</span>
+
+				//Update the registry with random conflicts
+<span class="nc" id="L233">				s.getWorkload().updateConflicts(registry, dispersion, likelihood);</span>
+				
+<span class="nc" id="L235">			} else {</span>
+<span class="nc" id="L236">				registry.neutralize();</span>
+			}
+		} else {
+<span class="nc" id="L239">			registry.neutralize();</span>
+		}
+<span class="nc" id="L241">	}</span>
+	
+	
+	
+	private void createDependencyRegistry(Simulation s) {
+		
+<span class="nc" id="L247">		int N = s.getWorkload().getCount();</span>
+		
+		//Create the registry of the appropriate size:
+<span class="nc" id="L250">		TxDependencyRegistry registry = new TxDependencyRegistry(N);</span>
+		
+		//set the registry to the simulation object for use by nodes.
+<span class="nc" id="L253">		s.setDependencyRegistry(registry);</span>
+		
+<span class="nc bnc" id="L255" title="All 2 branches missed.">		if (Config.hasProperty(&quot;workload.hasDependencies&quot;)) { </span>
+<span class="nc bnc" id="L256" title="All 2 branches missed.">			if (Config.getPropertyBoolean(&quot;workload.hasDependencies&quot;)) {</span>
+<span class="nc" id="L257">				float dispersion = Config.getPropertyFloat(&quot;workload.dependencies.dispersion&quot;);</span>
+<span class="nc" id="L258">				int countMean = Config.getPropertyInt(&quot;workload.dependencies.countMean&quot;);</span>
+<span class="nc" id="L259">				float countSD = Config.getPropertyFloat(&quot;workload.dependencies.countSD&quot;);</span>
+<span class="nc" id="L260">				boolean mandatory = false;</span>
+<span class="nc bnc" id="L261" title="All 2 branches missed.">				if (Config.hasProperty(&quot;workload.dependencies.mandatory&quot;)) {</span>
+<span class="nc" id="L262">					mandatory = Config.getPropertyBoolean(&quot;workload.dependencies.mandatory&quot;);</span>
+				}
+						//Update the registry with random conflicts
+<span class="nc" id="L265">				s.getWorkload().updateDependencies(registry, mandatory, dispersion, countMean, countSD);</span>
+				
+			}
+		}
+<span class="nc" id="L269">	}</span>
+	
+	
+	/**
+	 * Sets a hard termination time for the simulation based on the
+	 * {@code sim.terminate.atTime} property in {@linkplain Config}.
+	 *
+	 * @param s the {@linkplain Simulation} for which to set the termination time
+	 */
+	public void setHardTerminationTime(Simulation s) {
+<span class="nc" id="L279">        s.setTerminationTime(Config.getPropertyLong(&quot;sim.terminate.atTime&quot;));</span>
+<span class="nc" id="L280">	}</span>
+
+
+    /**
+     * Schedules periodic belief report events within the simulation.
+     * &lt;p&gt;
+     * Belief reports summarize internal simulation states and are scheduled
+     * using {@linkplain ReportEventFactory}, with parameters:
+     * &lt;ul&gt;
+     *     &lt;li&gt;{@code reporter.beliefReportInterval}&lt;/li&gt;
+     *     &lt;li&gt;{@code reporter.beliefReportOffset}&lt;/li&gt;
+     * &lt;/ul&gt;
+     *
+     * @param s the {@linkplain Simulation} for which belief reporting is configured
+     */
+	public void scheduleBeliefReports(Simulation s) {
+<span class="nc" id="L296">        ReportEventFactory r = new ReportEventFactory();</span>
+<span class="nc" id="L297">        r.scheduleBeliefReports_Interval(Config.getPropertyLong(&quot;reporter.beliefReportInterval&quot;), </span>
+<span class="nc" id="L298">        		s, Config.getPropertyLong(&quot;reporter.beliefReportOffset&quot;));</span>
+<span class="nc" id="L299">	}</span>
+	
+	
+	
+	// --------------------------------------------------------------
+	// MAIN CONSTRUCTION METHOD
+	// --------------------------------------------------------------
+	
+	
+    /**
+     * Creates and fully configures a new {@linkplain Simulation} instance.
+     * &lt;p&gt;
+     * This method encapsulates the entire setup pipeline for a simulation:
+     * &lt;ol&gt;
+     *     &lt;li&gt;Creates the simulation object.&lt;/li&gt;
+     *     &lt;li&gt;Initializes and attaches a new {@linkplain Sampler}.&lt;/li&gt;
+     *     &lt;li&gt;Adds node, network, and transaction samplers.&lt;/li&gt;
+     *     &lt;li&gt;Builds the {@linkplain NodeSet} (delegated to subclass).&lt;/li&gt;
+     *     &lt;li&gt;Constructs and attaches a network.&lt;/li&gt;
+     *     &lt;li&gt;Creates and schedules the transaction workload.&lt;/li&gt;
+     *     &lt;li&gt;Schedules belief reporting events.&lt;/li&gt;
+     *     &lt;li&gt;Applies the hard termination time.&lt;/li&gt;
+     * &lt;/ol&gt;
+     *
+     * @param simID a unique identifier for the simulation
+     * @return a fully initialized and ready-to-run {@linkplain Simulation}
+     */
+	public Simulation createSimulation(int simID) {
+
+<span class="nc" id="L328">		Simulation s = new Simulation(simID);</span>
+
+		// --------------------------------------------------------------
+		// SAMPLER DEVELOPMENT
+		// --------------------------------------------------------------
+
+		/** Create a Sampler object, which will contain all samplers
+		 * (node, network, transaction/workload).
+		 * Attach it to the simulator.
+		 */
+<span class="nc" id="L338">		Sampler sampler = new Sampler();</span>
+<span class="nc" id="L339">		s.setSampler(sampler);</span>
+
+		/** Develop sampler 1: Node Sampler */
+<span class="nc" id="L342">		addNodeSampler(s);</span>
+
+		/** Develop sampler 2: Network Sampler */
+<span class="nc" id="L345">		addNetworkSampler(s);</span>
+
+		/** Develop sampler 3: Transaction Sampler */
+<span class="nc" id="L348">		addTransactionSampler(s);</span>
+
+		// --------------------------------------------------------------
+		// COMPONENT CONSTRUCTION
+		// --------------------------------------------------------------
+
+		/** Create the nodeset, using the node factory and the node sampler */
+<span class="nc" id="L355">		NodeSet ns = createNodeSet(s);</span>
+
+		/** Create the network, using the network sampler and the nodeset
+		 * add the node set to the network and the network to the simulator */
+<span class="nc" id="L359">		addNetwork(s, ns);</span>
+
+		/** Create the transaction workload, using the transaction sampler
+		 * add it to the simulator, and schedule the corresponding events */
+<span class="nc" id="L363">		addAndScheduleTransactionWorkload(s);</span>
+		
+		/** Create Conflict Registry 
+		 */
+<span class="nc" id="L367">		createConflictRegistry(s);</span>
+
+		/** Create Dependency Registry 
+		 */
+<span class="nc" id="L371">		createDependencyRegistry(s);</span>
+		
+		/** Schedule belief reporting events */
+<span class="nc" id="L374">		scheduleBeliefReports(s);</span>
+		
+		/** Set the hard termination time of the simulator */
+<span class="nc" id="L377">		setHardTerminationTime(s);</span>
+		
+<span class="nc" id="L379">		return s;</span>
+
+	}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>
